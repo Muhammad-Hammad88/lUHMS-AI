@@ -1,72 +1,99 @@
+"""
+embed.py
+--------
+Embedding module for LUMHS chatbot.
+
+Two modes:
+1. STANDALONE — run directly to embed entire scraped_data.json
+2. FUNCTION   — import embed_pages() for use by server.py admin updates
+
+Improvements:
+- Section-aware metadata (used for targeted deletion)
+- Paragraph + sentence aware chunking with overlap
+- Duplicate prevention via content hashing
+- Batch processing for performance
+- Progress callback support for live admin panel logs
+"""
+
 import json
-import chromadb
-from sentence_transformers import SentenceTransformer
 import re
 import hashlib
+from typing import Optional, Callable
 
-print("Loading model...", flush=True)
-model = SentenceTransformer('all-MiniLM-L6-v2')
+import chromadb
+from sentence_transformers import SentenceTransformer
 
-client = chromadb.PersistentClient(path="./chroma_db")
-collection = client.get_or_create_collection(name="lumhs")
+from sections import get_section_for_url
 
-print("Loading scraped data...", flush=True)
-
-with open('scraped_data.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-
-print(f"Total pages loaded: {len(data)}", flush=True)
+# =========================
+# CONFIG
+# =========================
+CHROMA_PATH = "./chroma_db"
+DATA_FILE = "scraped_data.json"
+BATCH_SIZE = 64
+MAX_WORDS_PER_CHUNK = 180
+OVERLAP_WORDS = 20
+MIN_CHUNK_WORDS = 20
 
 # =========================
 # NOISE FILTER
 # =========================
-def clean_text(text):
+NOISE_PHRASES = [
+    "gateway to a brighter future",
+    "copyright",
+    "all rights reserved",
+    "home about contact",
+    "student portal",
+    "staff portal",
+]
+
+def is_noise(text: str) -> bool:
+    t = text.lower()
+    return any(phrase in t for phrase in NOISE_PHRASES)
+
+# =========================
+# TEXT CLEANING
+# =========================
+def clean_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-def is_noise(text):
-    noise_keywords = [
-        "gateway to a brighter future",
-        "copyright",
-        "all rights reserved",
-        "menu",
-        "home about contact",
-        "student portal",
-        "staff portal"
-    ]
-    t = text.lower()
-    return any(k in t for k in noise_keywords)
-
 # =========================
-# IMPROVED CHUNKING
-# Splits by natural boundaries (paragraphs, sentences)
-# instead of blind word count cuts
+# SMART CHUNKING
+# Splits by paragraphs first, then sentences
+# Maintains overlap between chunks for context continuity
 # =========================
-def chunk_text(text, max_words=180, overlap=20):
-    # First try to split by paragraph breaks
+def chunk_text(text: str, max_words: int = MAX_WORDS_PER_CHUNK, overlap: int = OVERLAP_WORDS) -> list[str]:
+    # Try paragraph-based splitting first
     paragraphs = [p.strip() for p in re.split(r'\n{2,}|\.\s{2,}', text) if p.strip()]
 
     chunks = []
-    current_chunk = []
+    current_chunk: list[str] = []
     current_words = 0
+
+    def flush_chunk():
+        if current_chunk:
+            chunk = " ".join(current_chunk)
+            if len(chunk.split()) >= MIN_CHUNK_WORDS and not is_noise(chunk):
+                chunks.append(chunk)
+
+    def get_overlap_words(word_list: list[str]) -> list[str]:
+        return word_list[-overlap:] if overlap and len(word_list) >= overlap else []
 
     for para in paragraphs:
         para_words = para.split()
         para_len = len(para_words)
 
-        # If single paragraph is too long, split it by sentences
         if para_len > max_words:
+            # Paragraph too long — split by sentences
             sentences = re.split(r'(?<=[.!?])\s+', para)
             for sentence in sentences:
                 s_words = sentence.split()
                 s_len = len(s_words)
 
                 if current_words + s_len > max_words and current_chunk:
-                    chunk = " ".join(current_chunk)
-                    if len(chunk.split()) > 20 and not is_noise(chunk):
-                        chunks.append(chunk)
-                    # overlap — keep last few words for context continuity
-                    overlap_words = current_chunk[-overlap:] if overlap else []
+                    flush_chunk()
+                    overlap_words = get_overlap_words(current_chunk)
                     current_chunk = overlap_words + s_words
                     current_words = len(current_chunk)
                 else:
@@ -74,28 +101,22 @@ def chunk_text(text, max_words=180, overlap=20):
                     current_words += s_len
         else:
             if current_words + para_len > max_words and current_chunk:
-                chunk = " ".join(current_chunk)
-                if len(chunk.split()) > 20 and not is_noise(chunk):
-                    chunks.append(chunk)
-                overlap_words = current_chunk[-overlap:] if overlap else []
+                flush_chunk()
+                overlap_words = get_overlap_words(current_chunk)
                 current_chunk = overlap_words + para_words
                 current_words = len(current_chunk)
             else:
                 current_chunk.extend(para_words)
                 current_words += para_len
 
-    # flush remaining
-    if current_chunk:
-        chunk = " ".join(current_chunk)
-        if len(chunk.split()) > 20 and not is_noise(chunk):
-            chunks.append(chunk)
+    flush_chunk()
 
-    # fallback — if no paragraph splits worked, use word count
+    # Fallback — if no chunks produced, use sliding window
     if not chunks:
         words = text.split()
         for i in range(0, len(words), max_words - overlap):
             chunk = " ".join(words[i:i + max_words])
-            if len(chunk.split()) > 20 and not is_noise(chunk):
+            if len(chunk.split()) >= MIN_CHUNK_WORDS and not is_noise(chunk):
                 chunks.append(chunk)
 
     return chunks
@@ -103,119 +124,177 @@ def chunk_text(text, max_words=180, overlap=20):
 # =========================
 # METADATA EXTRACTION
 # =========================
-def extract_metadata(url, text):
+def extract_metadata(url: str, text: str, section: Optional[str] = None) -> dict:
     url_lower = url.lower()
     text_lower = text.lower()
 
-    meta = {
+    # Detect most recent year mentioned
+    years = re.findall(r"(20\d{2})", text_lower)
+    latest_year = max([int(y) for y in years]) if years else 0
+
+    # Use provided section or detect from URL
+    if not section:
+        section = get_section_for_url(url)
+
+    # Detect document type and priority
+    if url_lower.endswith(".pdf"):
+        doc_type = "document"
+        priority = 9
+    elif "admission" in url_lower or "admission" in text_lower:
+        doc_type = "admission"
+        priority = 10
+    elif "result" in url_lower:
+        doc_type = "result"
+        priority = 8
+    elif "fee" in url_lower or "fee structure" in text_lower:
+        doc_type = "fee"
+        priority = 8
+    elif "notice" in url_lower or "notification" in url_lower or "circular" in url_lower:
+        doc_type = "notice"
+        priority = 7
+    elif "facult" in url_lower or "department" in url_lower:
+        doc_type = "faculty"
+        priority = 6
+    elif "program" in url_lower or "course" in url_lower:
+        doc_type = "program"
+        priority = 6
+    elif "news" in url_lower or "event" in text_lower:
+        doc_type = "event"
+        priority = 3
+    else:
+        doc_type = "general"
+        priority = 1
+
+    return {
         "url": url,
-        "year": 0,
-        "type": "general",
-        "priority": 1
+        "section": section,
+        "type": doc_type,
+        "year": latest_year,
+        "priority": priority,
     }
 
-    # detect year — pick most recent
-    years = re.findall(r"(20\d{2})", text_lower)
-    if years:
-        meta["year"] = max([int(y) for y in years])
-
-    # detect type from URL first then text
-    if "admission" in url_lower or "admission" in text_lower:
-        meta["type"] = "admission"
-        meta["priority"] = 10
-    elif "result" in url_lower:
-        meta["type"] = "result"
-        meta["priority"] = 8
-    elif "notice" in url_lower or "notification" in url_lower or "circular" in url_lower:
-        meta["type"] = "notice"
-        meta["priority"] = 7
-    elif "faculty" in url_lower or "department" in url_lower:
-        meta["type"] = "faculty"
-        meta["priority"] = 6
-    elif "program" in url_lower or "course" in url_lower:
-        meta["type"] = "program"
-        meta["priority"] = 6
-    elif "fee" in url_lower or "fee" in text_lower:
-        meta["type"] = "fee"
-        meta["priority"] = 8
-    elif "event" in text_lower or "news" in url_lower:
-        meta["type"] = "event"
-        meta["priority"] = 3
-    elif url_lower.endswith(".pdf"):
-        meta["type"] = "document"
-        meta["priority"] = 9
-
-    return meta
-
 # =========================
-# STORAGE
+# CORE EMBED FUNCTION
+# Used by both standalone mode and server.py
 # =========================
-batch_docs = []
-batch_embs = []
-batch_metas = []
-batch_ids = []
+def embed_pages(
+    pages: list[dict],
+    collection,
+    model: Optional[SentenceTransformer] = None,
+    progress_callback: Optional[Callable[[str], None]] = None
+) -> int:
+    """
+    Embed a list of page dicts into ChromaDB collection.
 
-BATCH_SIZE = 64
-total = 0
-seen_hashes = set()
+    Args:
+        pages: list of {url, content, section} dicts
+        collection: ChromaDB collection instance
+        model: SentenceTransformer model (loaded if not provided)
+        progress_callback: optional function for live progress logging
 
-print("Embedding data...", flush=True)
+    Returns:
+        Total number of chunks stored
+    """
 
-for i, page in enumerate(data):
-    url = page.get("url", "unknown")
-    raw = page.get("content", "")
+    def log(msg: str):
+        print(msg, flush=True)
+        if progress_callback:
+            progress_callback(msg)
 
-    cleaned = clean_text(raw)
+    if model is None:
+        log("Loading embedding model...")
+        model = SentenceTransformer("all-MiniLM-L6-v2")
 
-    if len(cleaned.split()) < 30:
-        continue
+    batch_docs = []
+    batch_embs = []
+    batch_metas = []
+    batch_ids = []
 
-    chunks = chunk_text(cleaned)
+    total = 0
+    skipped_duplicates = 0
+    seen_hashes: set[str] = set()
 
-    if not chunks:
-        continue
+    for i, page in enumerate(pages):
+        url = page.get("url", "unknown")
+        raw = page.get("content", "")
+        section = page.get("section", None)
 
-    meta = extract_metadata(url, cleaned)
+        cleaned = clean_text(raw)
 
-    embeddings = model.encode(chunks, show_progress_bar=False).tolist()
-
-    print(f"[{i+1}/{len(data)}] {url} -> {len(chunks)} chunks", flush=True)
-
-    for chunk, emb in zip(chunks, embeddings):
-        h = hashlib.md5(chunk.encode()).hexdigest()
-
-        if h in seen_hashes:
+        if len(cleaned.split()) < 30:
             continue
-        seen_hashes.add(h)
 
-        batch_docs.append(chunk)
-        batch_embs.append(emb)
-        batch_metas.append(meta)
-        batch_ids.append(h)
+        chunks = chunk_text(cleaned)
 
-        total += 1
+        if not chunks:
+            continue
 
-        if len(batch_docs) >= BATCH_SIZE:
-            collection.upsert(
-                documents=batch_docs,
-                embeddings=batch_embs,
-                metadatas=batch_metas,
-                ids=batch_ids
-            )
-            print(f"Stored {total} chunks...", flush=True)
-            batch_docs = []
-            batch_embs = []
-            batch_metas = []
-            batch_ids = []
+        meta = extract_metadata(url, cleaned, section)
 
-# final flush
-if batch_docs:
-    collection.upsert(
-        documents=batch_docs,
-        embeddings=batch_embs,
-        metadatas=batch_metas,
-        ids=batch_ids
-    )
+        try:
+            embeddings = model.encode(chunks, show_progress_bar=False).tolist()
+        except Exception as e:
+            log(f"  [EMBED ERROR] {url}: {e}")
+            continue
 
-print("\nDONE")
-print("Total chunks stored:", total)
+        log(f"[{i+1}/{len(pages)}] {url} → {len(chunks)} chunks")
+
+        for chunk, emb in zip(chunks, embeddings):
+            h = hashlib.md5(chunk.encode()).hexdigest()
+
+            if h in seen_hashes:
+                skipped_duplicates += 1
+                continue
+            seen_hashes.add(h)
+
+            batch_docs.append(chunk)
+            batch_embs.append(emb)
+            batch_metas.append(meta)
+            batch_ids.append(h)
+            total += 1
+
+            if len(batch_docs) >= BATCH_SIZE:
+                collection.upsert(
+                    documents=batch_docs,
+                    embeddings=batch_embs,
+                    metadatas=batch_metas,
+                    ids=batch_ids
+                )
+                log(f"Stored {total} chunks...")
+                batch_docs = []
+                batch_embs = []
+                batch_metas = []
+                batch_ids = []
+
+    # Final flush
+    if batch_docs:
+        collection.upsert(
+            documents=batch_docs,
+            embeddings=batch_embs,
+            metadatas=batch_metas,
+            ids=batch_ids
+        )
+
+    log(f"Embedding complete. Total: {total} chunks stored, {skipped_duplicates} duplicates skipped.")
+    return total
+
+# =========================
+# STANDALONE ENTRY POINT
+# Run directly: python embed.py
+# =========================
+if __name__ == "__main__":
+    print("Loading model...", flush=True)
+    _model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    _client = chromadb.PersistentClient(path=CHROMA_PATH)
+    _collection = _client.get_or_create_collection(name="lumhs")
+
+    print("Loading scraped data...", flush=True)
+    with open(DATA_FILE, 'r', encoding='utf-8') as f:
+        _data = json.load(f)
+
+    print(f"Total pages loaded: {len(_data)}", flush=True)
+
+    _total = embed_pages(_data, _collection, model=_model)
+
+    print(f"\nDONE — {_total} chunks stored.")

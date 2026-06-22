@@ -115,12 +115,17 @@
     padding: 14px 18px;
     display: flex;
     align-items: center;
-    gap: 12px;
     border-bottom: 2px solid var(--lumhs-gold);
     flex-shrink: 0;
+    justify-content: space-between;
   }
 
-  /* FIXED: Used transforms to counter the empty space at the top of the image file */
+  .lumhs-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .lumhs-bot-avatar {
     width: 52px;
     height: 52px;
@@ -129,8 +134,6 @@
     flex-shrink: 0;
     border: 2px solid var(--lumhs-gold);
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-    
-    /* These three lines physically shift the visual graphic upward into the true center */
     transform: scale(1.3) translateY(3px);
     transform-origin: center center;
     background: transparent;
@@ -164,6 +167,27 @@
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
+  }
+
+  .lumhs-admin-btn {
+    background: transparent;
+    border: 1px solid var(--lumhs-gold);
+    color: var(--lumhs-gold-light);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .lumhs-admin-btn:hover {
+    background: var(--lumhs-gold);
+    color: var(--lumhs-navy);
+    box-shadow: 0 0 8px rgba(201, 168, 76, 0.4);
   }
 
   #lumhs-messages {
@@ -301,6 +325,13 @@
 
   #lumhs-input::placeholder { color: #aaa; }
 
+  /* Disabled state for input */
+  #lumhs-input:disabled {
+    background: #e0e0e0;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+
   #lumhs-send-btn {
     width: 38px;
     height: 38px;
@@ -323,6 +354,14 @@
 
   #lumhs-send-btn svg { width: 16px; height: 16px; fill: white; }
   #lumhs-send-btn:hover svg { fill: var(--lumhs-navy); }
+
+  /* Disabled state for send button */
+  #lumhs-send-btn:disabled {
+    background: #a0a0a0;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
 
   .lumhs-powered {
     text-align: center;
@@ -352,22 +391,21 @@
 
 <div id="lumhs-chat-window">
   <div id="lumhs-chat-header">
-    <img class="lumhs-bot-avatar" src="bot-logo.png" alt="LUMHS Bot"/>
-    <div class="lumhs-header-text">
-      <h3>LUMHS Assistant</h3>
-      <p><span class="lumhs-status-dot"></span>Online — Ask me anything</p>
+    <div class="lumhs-header-left">
+      <img class="lumhs-bot-avatar" src="bot-logo.png" alt="LUMHS Bot"/>
+      <div class="lumhs-header-text">
+        <h3>LUMHS Assistant</h3>
+        <p><span class="lumhs-status-dot"></span>Online — Ask me anything</p>
+      </div>
     </div>
+    <a href="admin.html" class="lumhs-admin-btn">Admin Login</a>
   </div>
 
   <div id="lumhs-messages">
     <div class="lumhs-msg bot">
       Welcome to <strong>LUMHS</strong>! I'm your university assistant. How can I help you today?
-      <div class="lumhs-suggestions">
-        <button class="lumhs-suggestion-btn" onclick="lumhsAsk('What faculties are in LUMHS?')">Faculties</button>
-        <button class="lumhs-suggestion-btn" onclick="lumhsAsk('How to apply for admission?')">Admissions</button>
-        <button class="lumhs-suggestion-btn" onclick="lumhsAsk('What programs are offered?')">Programs</button>
-        <button class="lumhs-suggestion-btn" onclick="lumhsAsk('Contact information')">Contact</button>
-      </div>
+      <div class="lumhs-suggestions" id="lumhs-dynamic-chips">
+        </div>
     </div>
   </div>
 
@@ -382,9 +420,35 @@
 </div>
 
 <script>
+  // CHANGE THESE TO YOUR BACKEND ENDPOINTS
   const LUMHS_API = 'http://127.0.0.1:5000/ask';
+  const SUGGESTIONS_API = 'http://127.0.0.1:5000/admin/suggestions';
   let SESSION_ID = '';
   console.log('Session ID at start:', SESSION_ID);
+
+  // Load chips dynamically from backend when widget loads
+  window.addEventListener('DOMContentLoaded', loadChatWidgetChips);
+
+  async function loadChatWidgetChips() {
+    try {
+      const res = await fetch(SUGGESTIONS_API);
+      const data = await res.json();
+      const container = document.getElementById('lumhs-dynamic-chips');
+      container.innerHTML = '';
+      
+      if (data.suggestions && data.suggestions.length > 0) {
+        data.suggestions.forEach(item => {
+          const btn = document.createElement('button');
+          btn.className = 'lumhs-suggestion-btn';
+          btn.innerText = item.label;
+          btn.onclick = () => lumhsAsk(item.question);
+          container.appendChild(btn);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load custom chips:', e);
+    }
+  }
 
   function lumhsToggleChat() {
     document.getElementById('lumhs-chat-btn').classList.toggle('open');
@@ -401,12 +465,19 @@
 
   async function lumhsSend() {
     const input = document.getElementById('lumhs-input');
+    const sendBtn = document.getElementById('lumhs-send-btn');
     const question = input.value.trim();
     if (!question) return;
+    
     input.value = '';
     input.style.height = 'auto';
     lumhsAddMessage(question, 'user');
     const typing = lumhsShowTyping();
+
+    // Disable input and send button while loading
+    input.disabled = true;
+    sendBtn.disabled = true;
+
     try {
       const response = await fetch(LUMHS_API, {
         method: 'POST',
@@ -421,6 +492,11 @@
     } catch (e) {
       typing.remove();
       lumhsAddMessage('Sorry, unable to connect to the server. Please try again.', 'bot');
+    } finally {
+      // Re-enable input and send button after request finishes
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
     }
   }
 
@@ -429,12 +505,12 @@
     const msg = document.createElement('div');
     msg.className = `lumhs-msg ${type}`;
     if (type === 'bot') {
-  let formatted = text
-  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-  .replace(/\*(.*?)\*/g, '<em>$1</em>')
-  .replace(/\n/g, '<br>')
-  .replace(/(\d+\.\s)/g, '<br><strong>$1</strong>')
-  .replace(/^<br>/, '');
+      let formatted = text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>')
+      .replace(/(\d+\.\s)/g, '<br><strong>$1</strong>')
+      .replace(/^<br>/, '');
       msg.innerHTML = formatted;
     } else {
       msg.textContent = text;
