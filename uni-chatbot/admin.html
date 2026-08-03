@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUMHS Admin Panel</title>
+<style>
+  :root {
+    --navy: #0a1f44;
+    --navy-light: #162d5e;
+    --gold: #c9a84c;
+    --gold-light: #e8c97a;
+    --gray-bg: #f0f2f7;
+    --white: #ffffff;
+    --border: #dde1ed;
+    --text: #1a1f2e;
+    --text-muted: #6b7280;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --sidebar-w: 220px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: var(--gray-bg); color: var(--text); }
+
+  /* LOGIN */
+  #login-overlay { position: fixed; inset: 0; background: var(--navy); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+  .login-box { background: white; padding: 40px; border-radius: 12px; width: 360px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.4); }
+  .login-box h2 { color: var(--navy); margin-bottom: 6px; }
+  .login-box p { color: #888; font-size: 13px; margin-bottom: 24px; }
+  .login-field { width: 100%; padding: 12px; margin-bottom: 12px; border: 1.5px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+  .login-field:focus { border-color: var(--gold); }
+  .login-btn { width: 100%; padding: 13px; background: var(--navy); color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .login-btn:hover { opacity: 0.9; }
+  .back-link { display: block; width: 100%; text-align: center; margin-top: 16px; color: #aaa; font-size: 12px; text-decoration: none; cursor: pointer; background: #6c757d; color: white; border: none; border-radius: 8px; padding: 13px; margin-top: 10px; }
+  .back-link:hover { opacity: 0.9; }
+  .login-error { color: #dc3545; font-size: 13px; margin-top: 10px; display: none; }
+
+  /* PANEL LAYOUT */
+  #admin-panel { display: none; min-height: 100vh; }
+  .topnav { background: var(--navy); color: white; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid var(--gold); position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
+  .topnav h2 { font-size: 16px; color: white; font-weight: 700; letter-spacing: 0.3px; }
+  .topnav-right { display: flex; align-items: center; gap: 12px; }
+  .logout-btn { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .logout-btn:hover { background: rgba(255,255,255,0.2); }
+
+  .panel-body { display: flex; padding-top: 56px; min-height: 100vh; }
+
+  /* SIDEBAR */
+  .sidebar { width: var(--sidebar-w); background: var(--navy); position: fixed; top: 56px; bottom: 0; left: 0; overflow-y: auto; padding: 16px 0; z-index: 50; }
+  .sidebar-section { padding: 8px 16px 4px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.35); letter-spacing: 1px; text-transform: uppercase; }
+  .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: rgba(255,255,255,0.7); cursor: pointer; font-size: 13.5px; transition: all 0.15s; border-left: 3px solid transparent; }
+  .sidebar-item:hover { background: rgba(255,255,255,0.07); color: white; }
+  .sidebar-item.active { background: rgba(201,168,76,0.15); color: var(--gold-light); border-left-color: var(--gold); }
+
+  /* MAIN CONTENT */
+  .main { margin-left: var(--sidebar-w); padding: 28px; flex: 1; }
+
+  /* TABS */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* PAGE HEADER */
+  .page-header { margin-bottom: 24px; }
+  .page-header h1 { font-size: 22px; font-weight: 700; color: var(--navy); }
+  .page-header p { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+
+  /* CARDS */
+  .card { background: white; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 20px; }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-header h3 { font-size: 14px; font-weight: 700; color: var(--navy); }
+  .card-body { padding: 20px; }
+
+  /* DASHBOARD STATS */
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: white; border-radius: 10px; border: 1px solid var(--border); padding: 20px; }
+  .stat-card .stat-num { font-size: 28px; font-weight: 800; color: var(--navy); }
+  .stat-card .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* RANKED LIST */
+  .rank-row { display: flex; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); gap: 14px; }
+  .rank-row:last-child { border-bottom: none; }
+  .rank-num { font-size: 20px; font-weight: 800; color: var(--navy); width: 32px; text-align: center; flex-shrink: 0; }
+  .rank-name { flex: 1; font-size: 13.5px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.3px; }
+  .rank-count { font-size: 12px; color: var(--text-muted); background: #f0f2f7; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+  .expand-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted); transition: transform 0.25s; padding: 2px 6px; line-height: 1; }
+  .expand-btn.open { transform: rotate(180deg); }
+  .ranked-body { overflow: hidden; transition: max-height 0.3s ease; max-height: 0; }
+  .ranked-body.open { max-height: 2000px; }
+  .no-data-msg { color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px 0; }
+
+  /* PROGRAM CARDS */
+  .programs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .prog-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 16px; transition: all 0.2s; position: relative; }
+  .prog-card:hover { border-color: var(--gold); box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  .prog-card h4 { font-size: 13.5px; font-weight: 700; color: var(--navy); margin-bottom: 4px; padding-right: 90px; }
+  .prog-card p { font-size: 12px; color: var(--text-muted); }
+  .prog-card .prog-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 20px; background: #dbeafe; color: #1d4ed8; font-weight: 600; margin-bottom: 8px; }
+  .prog-card .prog-actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; opacity: 0; transition: opacity 0.2s; }
+  .prog-card:hover .prog-actions { opacity: 1; }
+  .btn-icon { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .btn-icon:hover { background: #f3f4f6; color: var(--navy); }
+  .btn-icon.danger:hover { background: #fee2e2; border-color: #fecaca; color: var(--danger); }
+
+  /* FORM STYLES */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--navy); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .form-group input, .form-group textarea { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13.5px; outline: none; font-family: inherit; resize: vertical; transition: border-color 0.2s; }
+  .form-group input:focus, .form-group textarea:focus { border-color: var(--gold); }
+  .form-group textarea { min-height: 80px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  /* BUTTONS */
+  button { cursor: pointer; border: none; border-radius: 8px; font-weight: 600; transition: 0.2s; font-family: inherit; }
+  .btn-primary { background: var(--navy); color: white; padding: 10px 20px; font-size: 13.5px; }
+  .btn-primary:hover { background: var(--navy-light); }
+  .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+  .btn-secondary { background: #f3f4f6; color: #374151; padding: 10px 16px; font-size: 13px; border: 1px solid var(--border); }
+  .btn-secondary:hover { background: #e5e7eb; }
+  .btn-danger { background: var(--danger); color: white; padding: 8px 14px; font-size: 13px; }
+  .btn-danger:hover { background: #b91c1c; }
+  .action-row { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+
+  /* SECTION EDITOR */
+  .section-fields { display: grid; gap: 14px; }
+  .field-row { background: #f8f9fc; border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .field-row label { display: block; font-size: 11px; font-weight: 700; color: var(--navy); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field-row textarea { width: 100%; padding: 10px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 70px; outline: none; }
+  .field-row textarea:focus { border-color: var(--gold); }
+
+  /* MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: white; border-radius: 12px; width: 700px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; z-index: 1; }
+  .modal-header h3 { font-size: 16px; font-weight: 700; color: var(--navy); }
+  .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-muted); padding: 4px 8px; }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* SUGGESTIONS */
+  .sug-form { display: grid; gap: 10px; background: #f8f9fc; padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; }
+  .sug-form input, .sug-form textarea { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13.5px; outline: none; font-family: inherit; resize: vertical; }
+  .sug-form input:focus, .sug-form textarea:focus { border-color: var(--gold); }
+  .sug-form label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .sug-form label input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; margin: 0; }
+  .sug-list-item { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); background: white; border-radius: 8px; margin-bottom: 8px; }
+  .sug-list-item .sug-info strong { font-size: 14px; color: var(--navy); }
+  .sug-list-item .sug-info small { display: block; color: #777; font-size: 12px; margin-top: 2px; }
+  .sug-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; margin-top: 4px; font-weight: 600; }
+  .sug-tag.auto { background: #dbeafe; color: #2563eb; }
+  .sug-tag.manual { background: #dcfce7; color: #16a34a; }
+  .sug-tag.paraphrase { background: #fef9c3; color: #d97706; }
+
+  /* CHAT HISTORY */
+  .history-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .history-toolbar input { flex: 1; min-width: 220px; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13.5px; outline: none; font-family: inherit; }
+  .history-toolbar input:focus { border-color: var(--gold); }
+  .history-item { border: 1px solid var(--border); background: white; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+  .history-item .h-question { font-size: 13.5px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+  .history-item .h-answer { font-size: 13px; color: var(--text); line-height: 1.5; white-space: pre-wrap; margin-bottom: 8px; }
+  .history-item .h-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .history-tag { display: inline-block; font-size: 10.5px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .history-tag.llm { background: #dbeafe; color: #1d4ed8; }
+  .history-tag.suggestion_chip { background: #dcfce7; color: #16a34a; }
+  .history-tag.fallback_no_match { background: #fee2e2; color: #dc2626; }
+  .history-tag.complex { background: #fef9c3; color: #d97706; }
+  .history-tag.simple { background: #f0f2f7; color: var(--text-muted); }
+  .history-time { font-size: 11px; color: var(--text-muted); }
+  .history-pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
+  .history-pagination span { font-size: 13px; color: var(--text-muted); }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 13.5px; font-weight: 600; z-index: 999; display: none; animation: slideIn 0.3s ease; }
+  .toast.success { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
+  .toast.error { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* LOADING */
+  .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 14px; }
+
+  @media(max-width: 900px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media(max-width: 768px) {
+    .sidebar { transform: translateX(-100%); }
+    .main { margin-left: 0; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-overlay">
+  <div class="login-box">
+    <h2>LUMHS Admin</h2>
+    <p>Sign in to manage chatbot data</p>
+    <input type="text" id="login-username" class="login-field" placeholder="Username" autocomplete="username"/>
+    <input type="password" id="login-password" class="login-field" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()"/>
+    <button class="login-btn" onclick="doLogin()">Sign In</button>
+    <button class="back-link" onclick="window.location.href='widget.html'">Back</button>
+    <div class="login-error" id="login-error">Invalid username or password.</div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="admin-panel">
+  <nav class="topnav">
+    <h2>LUMHS Admin Panel</h2>
+    <div class="topnav-right">
+      <button class="logout-btn" onclick="doLogout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <div class="panel-body">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-section">Overview</div>
+      <div class="sidebar-item active" onclick="switchTab('dashboard')">Dashboard</div>
+      <div class="sidebar-section">Knowledge Base</div>
+      <div class="sidebar-item" onclick="switchTab('programs')">Programs</div>
+      <div class="sidebar-item" onclick="switchTab('admissions')">Admissions</div>
+      <div class="sidebar-item" onclick="switchTab('contact')">Contact</div>
+      <div class="sidebar-item" onclick="switchTab('facilities')">Facilities</div>
+      <div class="sidebar-item" onclick="switchTab('about')">About</div>
+      <div class="sidebar-item" onclick="switchTab('faculties')">Faculties</div>
+      <div class="sidebar-item" onclick="switchTab('policies')">Policies</div>
+      <div class="sidebar-item" onclick="switchTab('research')">Research</div>
+      <div class="sidebar-section">Chatbot</div>
+      <div class="sidebar-item" onclick="switchTab('suggestions')">Suggestion Chips</div>
+      <div class="sidebar-item" onclick="switchTab('chat-history')">Chat History</div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+
+      <!-- DASHBOARD -->
+      <div class="tab-content active" id="tab-dashboard">
+        <div class="page-header">
+          <h1>Dashboard</h1>
+          <p>Chatbot analytics and knowledge base overview</p>
+        </div>
+
+        <!-- STATS GRID (4 cards) -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-num" id="stat-conversations">—</div>
+            <div class="stat-label">Total Conversations</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-programs">—</div>
+            <div class="stat-label">Programs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-unanswered">—</div>
+            <div class="stat-label">Unanswered Queries</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-chips">—</div>
+            <div class="stat-label">Suggestion Chips</div>
+          </div>
+        </div>
+
+        <!-- MOST SEARCHED PROGRAMS (expandable) -->
+        <div class="card">
+          <div class="card-header">
+            <h3> Most Searched Programs</h3>
+            <button class="expand-btn" id="expand-btn" onclick="toggleRanked()">▼</button>
+          </div>
+          <div class="ranked-body" id="ranked-body">
+            <div class="card-body" style="padding-top:10px;">
+              <div id="programs-ranked-list">
+                <div class="no-data-msg">No search data yet. Data appears after students use the chatbot.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- UNANSWERED QUERIES -->
+        <div class="card">
+          <div class="card-header"><h3> Recent Unanswered Queries</h3></div>
+          <div class="card-body">
+            <ul id="unanswered-list" style="list-style-position:inside; color:var(--text-muted); font-size:13.5px; line-height:2;">
+              <li>Loading...</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROGRAMS -->
+      <div class="tab-content" id="tab-programs">
+        <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h1>Programs</h1>
+            <p>Add, edit, or remove degree programs from the knowledge base</p>
+          </div>
+          <button class="btn-primary" onclick="openAddProgram()" style="padding:12px 24px;">+ Add New Program</button>
+        </div>
+        <div class="programs-grid" id="programs-grid">
+          <div class="loading">Loading programs...</div>
+        </div>
+      </div>
+
+      <!-- SECTION TABS -->
+      <div class="tab-content" id="tab-admissions">
+        <div class="page-header"><h1>Admissions</h1><p>Edit admission information shown to students</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Admissions Fields</h3><button class="btn-primary" onclick="saveSection('admissions')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-admissions"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-contact">
+        <div class="page-header"><h1>Contact</h1><p>Update contact information and links</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Contact Fields</h3><button class="btn-primary" onclick="saveSection('contact')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-contact"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-facilities">
+        <div class="page-header"><h1>Facilities</h1><p>Edit campus facilities information</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Facilities Fields</h3><button class="btn-primary" onclick="saveSection('facilities')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-facilities"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-about">
+        <div class="page-header"><h1>About</h1><p>Edit university history, vision, mission and more</p></div>
+        <div class="card">
+          <div class="card-header"><h3>About Fields</h3><button class="btn-primary" onclick="saveSection('about')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-about"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-faculties">
+        <div class="page-header"><h1>Faculties</h1><p>Edit faculty and department information</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Faculties Fields</h3><button class="btn-primary" onclick="saveSection('faculties')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-faculties"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-policies">
+        <div class="page-header"><h1>Policies</h1><p>Edit attendance, conduct, freeship and other policies</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Policy Fields</h3><button class="btn-primary" onclick="saveSection('policies')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-policies"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-research">
+        <div class="page-header"><h1>Research</h1><p>Edit research journals, ethics committee, and digital resources</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Research Fields</h3><button class="btn-primary" onclick="saveSection('research')">Save Changes</button></div>
+          <div class="card-body"><div class="section-fields" id="fields-research"></div></div>
+        </div>
+      </div>
+
+      <!-- SUGGESTIONS -->
+      <div class="tab-content" id="tab-suggestions">
+        <div class="page-header"><h1>Suggestion Chips</h1><p>Manage quick-reply buttons shown in the chatbot</p></div>
+        <div class="card">
+          <div class="card-header"><h3>Add New Chip</h3></div>
+          <div class="card-body">
+            <div class="sug-form">
+              <input type="text" id="sug-label" placeholder="Button label (e.g. Admissions)"/>
+              <input type="text" id="sug-question" placeholder="Question trigger (e.g. How to apply for admission?)"/>
+              <label>
+                <input type="checkbox" id="sug-auto" onchange="toggleAutoMode()"/>
+                Auto-Answer (let AI answer from knowledge base)
+              </label>
+              <textarea id="sug-answer" placeholder="Type the exact answer to show..." rows="3"></textarea>
+              <label id="paraphrase-label">
+                <input type="checkbox" id="sug-paraphrase"/>
+                Paraphrase answer through AI
+              </label>
+              <button class="btn-primary" onclick="addSuggestion()">+ Add Chip</button>
+            </div>
+            <div id="suggestions-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAT HISTORY -->
+      <div class="tab-content" id="tab-chat-history">
+        <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h1>Chat History</h1>
+            <p>Every question and answer the chatbot has handled, permanently logged</p>
+          </div>
+          <button class="btn-danger" onclick="clearChatHistory()">Clear All History</button>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="history-toolbar">
+              <input type="text" id="history-search" placeholder="Search questions or answers..." onkeydown="if(event.key==='Enter') searchHistory()"/>
+              <button class="btn-primary" onclick="searchHistory()">Search</button>
+              <button class="btn-secondary" onclick="clearSearch()">Clear</button>
+            </div>
+            <div id="history-list">
+              <div class="loading">Loading chat history...</div>
+            </div>
+            <div class="history-pagination" id="history-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- PROGRAM MODAL -->
+<div class="modal-overlay" id="prog-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Add Program</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Program Key (unique ID)</label>
+          <input type="text" id="prog-key" placeholder="e.g. mbbs, bds, bsbme"/>
+          <div class="form-hint">Lowercase, no spaces (use underscore). Cannot be changed after saving.</div>
+        </div>
+        <div class="form-group">
+          <label>Program Name</label>
+          <input type="text" id="prog-name" placeholder="e.g. MBBS — Bachelor of Medicine"/>
+        </div>
+        <div class="form-group">
+          <label>Duration</label>
+          <input type="text" id="prog-duration" placeholder="e.g. 4 years (Morning Program)"/>
+        </div>
+        <div class="form-group">
+          <label>Availability</label>
+          <input type="text" id="prog-availability" placeholder="e.g. LUMHS Jamshoro Campus only"/>
+        </div>
+        <div class="form-group full">
+          <label>Eligibility</label>
+          <textarea id="prog-eligibility" rows="3" placeholder="Eligibility criteria..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Description</label>
+          <textarea id="prog-description" rows="3" placeholder="Program description..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Fees</label>
+          <textarea id="prog-fees" rows="4" placeholder="Fee structure details..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Career Prospects</label>
+          <textarea id="prog-career" rows="2" placeholder="Career opportunities after graduation..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>How to Apply</label>
+          <textarea id="prog-apply" rows="3" placeholder="Application process..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Required Documents</label>
+          <textarea id="prog-docs" rows="3" placeholder="Documents required for admission..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Tags (comma separated)</label>
+          <input type="text" id="prog-tags" placeholder="e.g. mbbs, medicine, doctor, medical degree"/>
+        </div>
+        <div class="form-group full">
+          <label>Keywords (comma separated)</label>
+          <input type="text" id="prog-keywords" placeholder="e.g. become a doctor, medical admission, mbbs fee"/>
+        </div>
+        <div class="form-group full">
+          <label>Phrases (comma separated)</label>
+          <input type="text" id="prog-phrases" placeholder="e.g. I want to be a doctor, mbbs karna chahta hun"/>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveProgram()">Save Program</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const API = 'http://10.1.101.200:5000';
+  let TOKEN = localStorage.getItem('lumhs_admin_token') || '';
+  let knowledgeBase = {};
+  let editingProgKey = null;
+  const SKIP_FIELDS = ['tags', 'keywords', 'phrases'];
+  const SECTION_TABS = ['admissions', 'contact', 'facilities', 'about', 'faculties', 'policies', 'research'];
+
+  // Chat history pagination state
+  const HISTORY_PAGE_SIZE = 20;
+  let historyOffset = 0;
+  let historySearch = '';
+  let historyTotal = 0;
+
+  // =====================
+  // INIT
+  // =====================
+  window.onload = async () => {
+    if (TOKEN) {
+      try {
+        const res = await fetch(`${API}/admin/knowledge?token=${TOKEN}`);
+        if (!res.ok) { TOKEN = ''; localStorage.removeItem('lumhs_admin_token'); return; }
+        knowledgeBase = await res.json();
+        showPanel();
+        renderAll();
+      } catch(e) { showLogin(); }
+    }
+  };
+
+  function showPanel() { document.getElementById('login-overlay').style.display = 'none'; document.getElementById('admin-panel').style.display = 'block'; }
+  function showLogin() { document.getElementById('login-overlay').style.display = 'flex'; document.getElementById('admin-panel').style.display = 'none'; }
+
+  // =====================
+  // AUTH
+  // =====================
+  async function doLogin() {
+    const errEl = document.getElementById('login-error'); errEl.style.display = 'none';
+    try {
+      const res = await fetch(`${API}/admin/login`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: document.getElementById('login-username').value, password: document.getElementById('login-password').value }) });
+      const data = await res.json();
+      if (res.ok) {
+        TOKEN = data.token; localStorage.setItem('lumhs_admin_token', TOKEN);
+        const kbRes = await fetch(`${API}/admin/knowledge?token=${TOKEN}`);
+        knowledgeBase = await kbRes.json();
+        showPanel(); renderAll();
+      } else { errEl.textContent = 'Invalid username or password.'; errEl.style.display = 'block'; }
+    } catch(e) { errEl.textContent = 'Cannot connect to server.'; errEl.style.display = 'block'; }
+  }
+
+  function doLogout() {
+    fetch(`${API}/admin/logout`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token: TOKEN}) }).catch(() => {});
+    TOKEN = ''; localStorage.removeItem('lumhs_admin_token');
+    document.getElementById('login-username').value = ''; document.getElementById('login-password').value = '';
+    showLogin();
+  }
+
+  // =====================
+  // TAB SWITCHING
+  // =====================
+  function switchTab(name) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+    document.getElementById(`tab-${name}`).classList.add('active');
+    document.querySelectorAll('.sidebar-item').forEach(i => { if (i.getAttribute('onclick')?.includes(`'${name}'`)) i.classList.add('active'); });
+    if (name === 'chat-history') loadChatHistory();
+  }
+
+  // =====================
+  // RENDER ALL
+  // =====================
+  function renderAll() {
+    renderDashboard();
+    renderPrograms();
+    SECTION_TABS.forEach(renderSectionFields);
+    loadSuggestions();
+  }
+
+  // =====================
+  // RANKED LIST TOGGLE
+  // =====================
+  function toggleRanked() {
+    const body = document.getElementById('ranked-body');
+    const btn = document.getElementById('expand-btn');
+    body.classList.toggle('open');
+    btn.classList.toggle('open');
+  }
+
+  // =====================
+  // DASHBOARD
+  // =====================
+  async function renderDashboard() {
+    // Programs count from knowledge base
+    const programs = (knowledgeBase.sections || {}).programs || {};
+    const progCount = Object.keys(programs).filter(k => !SKIP_FIELDS.includes(k)).length;
+    document.getElementById('stat-programs').textContent = progCount;
+
+    // Chips count
+    try {
+      const sugRes = await fetch(`${API}/admin/suggestions`);
+      const sugData = await sugRes.json();
+      document.getElementById('stat-chips').textContent = sugData.suggestions?.length || 0;
+    } catch(e) {}
+
+    // Analytics
+    try {
+      const res = await fetch(`${API}/admin/analytics?token=${TOKEN}`);
+      if (!res.ok) {
+        document.getElementById('stat-conversations').textContent = '—';
+        document.getElementById('stat-unanswered').textContent = '—';
+        document.getElementById('unanswered-list').innerHTML = '<li>Analytics not available.</li>';
+        return;
+      }
+      const data = await res.json();
+
+      // Stat cards
+      document.getElementById('stat-conversations').textContent = data.total_conversations ?? 0;
+      document.getElementById('stat-unanswered').textContent = data.unanswered_count ?? 0;
+
+      // Ranked programs list
+      const rankedEl = document.getElementById('programs-ranked-list');
+      const counts = data.program_counts || {};
+      const entries = Object.entries(counts).filter(([, v]) => v > 0);
+
+      if (entries.length === 0) {
+        rankedEl.innerHTML = '<div class="no-data-msg">No search data yet. Data appears after students use the chatbot.</div>';
+      } else {
+        rankedEl.innerHTML = entries.map(([key, count], i) => `
+          <div class="rank-row">
+            <span class="rank-num">${i + 1}</span>
+            <span class="rank-name">${key.replace(/_/g, ' ')}</span>
+            <span class="rank-count">${count} ${count === 1 ? 'search' : 'searches'}</span>
+          </div>
+        `).join('');
+      }
+
+      // Unanswered queries
+      const list = document.getElementById('unanswered-list');
+      if (data.unanswered_queries && data.unanswered_queries.length > 0) {
+        list.innerHTML = data.unanswered_queries.slice().reverse().map(q => `<li>"${q}"</li>`).join('');
+      } else {
+        list.innerHTML = '<li style="color:var(--success)">No unanswered queries.</li>';
+      }
+
+    } catch(e) {
+      document.getElementById('stat-conversations').textContent = '—';
+      document.getElementById('stat-unanswered').textContent = '—';
+      document.getElementById('unanswered-list').innerHTML = '<li>Cannot load analytics data.</li>';
+    }
+  }
+
+  // =====================
+  // PROGRAMS
+  // =====================
+  function renderPrograms() {
+    const grid = document.getElementById('programs-grid');
+    const programs = (knowledgeBase.sections || {}).programs || {};
+    const progKeys = Object.keys(programs).filter(k => !SKIP_FIELDS.includes(k));
+    if (progKeys.length === 0) { grid.innerHTML = '<div class="loading">No programs found.</div>'; return; }
+    grid.innerHTML = progKeys.map(key => {
+      const p = programs[key];
+      return `<div class="prog-card">
+        <div class="prog-badge">${key.toUpperCase()}</div>
+        <div class="prog-actions">
+          <button class="btn-icon" onclick="openEditProgram('${key}')">Edit</button>
+          <button class="btn-icon danger" onclick="deleteProgram('${key}')">Delete</button>
+        </div>
+        <h4>${p.name || key}</h4>
+        <p>${p.duration || 'Duration not specified'}</p>
+      </div>`;
+    }).join('');
+  }
+
+  function openAddProgram() {
+    editingProgKey = null;
+    document.getElementById('modal-title').textContent = 'Add New Program';
+    document.getElementById('prog-key').disabled = false;
+    ['key','name','duration','availability','eligibility','description','fees','career','apply','docs','tags','keywords','phrases'].forEach(f => {
+      document.getElementById(`prog-${f}`).value = '';
+    });
+    document.getElementById('prog-modal').classList.add('open');
+  }
+
+  function openEditProgram(key) {
+    editingProgKey = key;
+    const p = (knowledgeBase.sections.programs || {})[key] || {};
+    document.getElementById('modal-title').textContent = `Edit: ${p.name || key}`;
+    document.getElementById('prog-key').value = key;
+    document.getElementById('prog-key').disabled = true;
+    document.getElementById('prog-name').value = p.name || '';
+    document.getElementById('prog-duration').value = p.duration || '';
+    document.getElementById('prog-availability').value = p.availability || '';
+    document.getElementById('prog-eligibility').value = p.eligibility || '';
+    document.getElementById('prog-description').value = p.description || '';
+    document.getElementById('prog-fees').value = typeof p.fees === 'object' ? JSON.stringify(p.fees, null, 2) : (p.fees || '');
+    document.getElementById('prog-career').value = p.career_prospects || '';
+    document.getElementById('prog-apply').value = p.how_to_apply || '';
+    document.getElementById('prog-docs').value = p.required_documents || '';
+    document.getElementById('prog-tags').value = (p.tags || []).join(', ');
+    document.getElementById('prog-keywords').value = (p.keywords || []).join(', ');
+    document.getElementById('prog-phrases').value = (p.phrases || []).join(', ');
+    document.getElementById('prog-modal').classList.add('open');
+  }
+
+  function closeModal() { document.getElementById('prog-modal').classList.remove('open'); }
+
+  async function saveProgram() {
+    const key = editingProgKey || document.getElementById('prog-key').value.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!key) { showToast('Program key is required', 'error'); return; }
+    const tagsRaw = document.getElementById('prog-tags').value;
+    const keywordsRaw = document.getElementById('prog-keywords').value;
+    const phrasesRaw = document.getElementById('prog-phrases').value;
+    const feesRaw = document.getElementById('prog-fees').value.trim();
+    let feesVal = feesRaw;
+    try { feesVal = JSON.parse(feesRaw); } catch(e) {}
+
+    const programData = {
+      name: document.getElementById('prog-name').value.trim(),
+      duration: document.getElementById('prog-duration').value.trim(),
+      availability: document.getElementById('prog-availability').value.trim(),
+      eligibility: document.getElementById('prog-eligibility').value.trim(),
+      description: document.getElementById('prog-description').value.trim(),
+      fees: feesVal,
+      career_prospects: document.getElementById('prog-career').value.trim(),
+      how_to_apply: document.getElementById('prog-apply').value.trim(),
+      required_documents: document.getElementById('prog-docs').value.trim(),
+      tags: tagsRaw.split(',').map(t => t.trim()).filter(Boolean),
+      keywords: keywordsRaw.split(',').map(t => t.trim()).filter(Boolean),
+      phrases: phrasesRaw.split(',').map(t => t.trim()).filter(Boolean)
+    };
+
+    try {
+      const res = await fetch(`${API}/admin/knowledge/programs`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ token: TOKEN, program_key: key, program_data: programData })
+      });
+      if (res.ok) {
+        if (!knowledgeBase.sections.programs) knowledgeBase.sections.programs = {};
+        knowledgeBase.sections.programs[key] = programData;
+        renderPrograms();
+        closeModal(); showToast('Program saved successfully', 'success');
+      } else { showToast('Failed to save program', 'error'); }
+    } catch(e) { showToast('Connection error', 'error'); }
+  }
+
+  async function deleteProgram(key) {
+    if (!confirm(`Delete program "${key}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API}/admin/knowledge/programs/${key}?token=${TOKEN}`, { method: 'DELETE' });
+      if (res.ok) {
+        delete knowledgeBase.sections.programs[key];
+        renderPrograms();
+        showToast('Program deleted', 'success');
+      } else { showToast('Failed to delete program', 'error'); }
+    } catch(e) { showToast('Connection error', 'error'); }
+  }
+
+  // =====================
+  // SECTION FIELDS
+  // =====================
+  function renderSectionFields(sectionName) {
+    const container = document.getElementById(`fields-${sectionName}`);
+    if (!container) return;
+    const section = (knowledgeBase.sections || {})[sectionName] || {};
+    const fields = Object.entries(section).filter(([k]) => !SKIP_FIELDS.includes(k));
+    if (fields.length === 0) { container.innerHTML = '<div class="loading">No fields found for this section.</div>'; return; }
+    container.innerHTML = fields.map(([key, val]) => {
+      const displayVal = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val || '');
+      const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const rows = Math.min(Math.max(2, Math.ceil(displayVal.length / 80)), 10);
+      return `<div class="field-row">
+        <label>${label}</label>
+        <textarea id="field-${sectionName}-${key}" rows="${rows}">${displayVal}</textarea>
+      </div>`;
+    }).join('');
+  }
+
+  async function saveSection(sectionName) {
+    const section = (knowledgeBase.sections || {})[sectionName] || {};
+    const fields = Object.keys(section).filter(k => !SKIP_FIELDS.includes(k));
+    let successCount = 0;
+    for (const key of fields) {
+      const el = document.getElementById(`field-${sectionName}-${key}`);
+      if (!el) continue;
+      let value = el.value.trim();
+      try {
+        const res = await fetch(`${API}/admin/knowledge/section`, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ token: TOKEN, section: sectionName, key, value })
+        });
+        if (res.ok) { knowledgeBase.sections[sectionName][key] = value; successCount++; }
+      } catch(e) {}
+    }
+    if (successCount > 0) showToast(`${sectionName} saved successfully`, 'success');
+    else showToast('Failed to save changes', 'error');
+  }
+
+  // =====================
+  // SUGGESTIONS
+  // =====================
+  async function loadSuggestions() {
+    try {
+      const res = await fetch(`${API}/admin/suggestions`);
+      const data = await res.json();
+      renderSuggestions(data.suggestions || []);
+      document.getElementById('stat-chips').textContent = data.suggestions?.length || 0;
+    } catch(e) {}
+  }
+
+  function renderSuggestions(suggestions) {
+    const list = document.getElementById('suggestions-list');
+    if (!suggestions.length) { list.innerHTML = '<div class="loading">No suggestion chips yet.</div>'; return; }
+    list.innerHTML = suggestions.map(s => {
+      const isAuto = s.answer === 'AUTO' || s.answer === 'AUTO_GENERATE';
+      return `<div class="sug-list-item">
+        <div class="sug-info">
+          <strong>${s.label}</strong>
+          <small>Trigger: "${s.question}"</small>
+          <div>
+            <span class="sug-tag ${isAuto ? 'auto' : 'manual'}">${isAuto ? 'AI Auto' : 'Manual'}</span>
+            ${s.paraphrase ? '<span class="sug-tag paraphrase">Paraphrase</span>' : ''}
+          </div>
+        </div>
+        <button class="btn-danger" onclick="deleteSuggestion('${s.id}')">Delete</button>
+      </div>`;
+    }).join('');
+  }
+
+  function toggleAutoMode() {
+    const isAuto = document.getElementById('sug-auto').checked;
+    const ansEl = document.getElementById('sug-answer');
+    ansEl.disabled = isAuto; ansEl.placeholder = isAuto ? 'AI will answer automatically' : 'Type the exact answer...';
+    if (isAuto) ansEl.value = '';
+    document.getElementById('sug-paraphrase').disabled = isAuto;
+  }
+
+  async function addSuggestion() {
+    const label = document.getElementById('sug-label').value.trim();
+    const question = document.getElementById('sug-question').value.trim();
+    const isAuto = document.getElementById('sug-auto').checked;
+    const answer = isAuto ? 'AUTO' : document.getElementById('sug-answer').value.trim();
+    const paraphrase = !isAuto && document.getElementById('sug-paraphrase').checked;
+    if (!label || !question) { showToast('Label and question are required', 'error'); return; }
+    try {
+      const res = await fetch(`${API}/admin/suggestions/add`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({label, question, answer, paraphrase, token: TOKEN}) });
+      const data = await res.json();
+      if (data.success) {
+        renderSuggestions(data.suggestions);
+        document.getElementById('sug-label').value = ''; document.getElementById('sug-question').value = ''; document.getElementById('sug-answer').value = '';
+        document.getElementById('stat-chips').textContent = data.suggestions.length;
+        showToast('Chip added', 'success');
+      }
+    } catch(e) { showToast('Failed to add chip', 'error'); }
+  }
+
+  async function deleteSuggestion(id) {
+    if (!confirm('Delete this suggestion chip?')) return;
+    try {
+      const res = await fetch(`${API}/admin/suggestions/delete`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id, token: TOKEN}) });
+      const data = await res.json();
+      if (data.success) {
+        renderSuggestions(data.suggestions);
+        document.getElementById('stat-chips').textContent = data.suggestions.length;
+        showToast('Chip deleted', 'success');
+      }
+    } catch(e) { showToast('Failed to delete chip', 'error'); }
+  }
+
+  // =====================
+  // CHAT HISTORY
+  // =====================
+  async function loadChatHistory() {
+    const listEl = document.getElementById('history-list');
+    listEl.innerHTML = '<div class="loading">Loading chat history...</div>';
+    try {
+      const params = new URLSearchParams({
+        token: TOKEN,
+        limit: HISTORY_PAGE_SIZE,
+        offset: historyOffset,
+        search: historySearch
+      });
+      const res = await fetch(`${API}/admin/chat-history?${params.toString()}`);
+      if (!res.ok) { listEl.innerHTML = '<div class="loading">Failed to load chat history.</div>'; return; }
+      const data = await res.json();
+      historyTotal = data.total || 0;
+      renderChatHistory(data.records || []);
+      renderHistoryPagination();
+    } catch(e) {
+      listEl.innerHTML = '<div class="loading">Cannot connect to server.</div>';
+    }
+  }
+
+  function renderChatHistory(records) {
+    const listEl = document.getElementById('history-list');
+    if (!records.length) {
+      listEl.innerHTML = '<div class="no-data-msg">No chat history found.</div>';
+      return;
+    }
+    const sourceLabels = { llm: 'AI Answer', suggestion_chip: 'Suggestion Chip', fallback_no_match: 'No Match' };
+    listEl.innerHTML = records.map(r => {
+      const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : '';
+      const sourceTag = r.source ? `<span class="history-tag ${r.source}">${sourceLabels[r.source] || r.source}</span>` : '';
+      const typeTag = r.type && r.type !== 'N/A' ? `<span class="history-tag ${r.type.toLowerCase()}">${r.type}</span>` : '';
+      return `<div class="history-item">
+        <div class="h-question">Q: ${escapeHtml(r.question || '')}</div>
+        <div class="h-answer">${escapeHtml(r.answer || '')}</div>
+        <div class="h-meta">
+          ${sourceTag}
+          ${typeTag}
+          <span class="history-time">${time}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderHistoryPagination() {
+    const el = document.getElementById('history-pagination');
+    const totalPages = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE));
+    const currentPage = Math.floor(historyOffset / HISTORY_PAGE_SIZE) + 1;
+    el.innerHTML = `
+      <button class="btn-secondary" onclick="prevHistoryPage()" ${currentPage <= 1 ? 'disabled' : ''}>← Prev</button>
+      <span>Page ${currentPage} of ${totalPages} (${historyTotal} total)</span>
+      <button class="btn-secondary" onclick="nextHistoryPage()" ${currentPage >= totalPages ? 'disabled' : ''}>Next →</button>
+    `;
+  }
+
+  function prevHistoryPage() {
+    historyOffset = Math.max(0, historyOffset - HISTORY_PAGE_SIZE);
+    loadChatHistory();
+  }
+
+  function nextHistoryPage() {
+    historyOffset += HISTORY_PAGE_SIZE;
+    loadChatHistory();
+  }
+
+  function searchHistory() {
+    historySearch = document.getElementById('history-search').value.trim();
+    historyOffset = 0;
+    loadChatHistory();
+  }
+
+  function clearSearch() {
+    document.getElementById('history-search').value = '';
+    historySearch = '';
+    historyOffset = 0;
+    loadChatHistory();
+  }
+
+  async function clearChatHistory() {
+    if (!confirm('Delete ALL chat history permanently? This cannot be undone.')) return;
+    try {
+      const res = await fetch(`${API}/admin/chat-history?token=${TOKEN}`, { method: 'DELETE' });
+      if (res.ok) {
+        historyOffset = 0;
+        loadChatHistory();
+        showToast('Chat history cleared', 'success');
+      } else { showToast('Failed to clear history', 'error'); }
+    } catch(e) { showToast('Connection error', 'error'); }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // =====================
+  // TOAST
+  // =====================
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = `toast ${type}`; t.style.display = 'block';
+    setTimeout(() => t.style.display = 'none', 3500);
+  }
+</script>
+</body>
+</html>
