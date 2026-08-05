@@ -1,0 +1,23 @@
+[
+    {
+        "id": "chip_1718104800",
+        "label": "Contact Info",
+        "question": "What is the contact information for LUMHS?",
+        "answer": "You can contact LUMHS directly via phone at +92-22-9213305 or via email at info@lumhs.edu.pk.",
+        "paraphrase": true
+    },
+    {
+        "id": "chip_1718104801",
+        "label": "AI Assistant",
+        "question": "How does this AI assistant work?",
+        "answer": "AUTO",
+        "paraphrase": false
+    },
+    {
+        "id": "chip_1781181223",
+        "label": "HIIIIIII",
+        "question": "HI",
+        "answer": "HI",
+        "paraphrase": false
+    }
+]
